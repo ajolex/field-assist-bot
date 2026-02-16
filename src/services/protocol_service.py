@@ -9,6 +9,10 @@ from src.models.interaction import ConfidenceLevel, InteractionRecord
 from src.services.escalation_service import EscalationService
 
 
+# Constants
+LOW_CONFIDENCE_ANSWER_PREVIEW_LENGTH = 200
+
+
 class ProtocolService:
 	"""Service responsible for protocol responses."""
 
@@ -72,7 +76,7 @@ class ProtocolService:
 			answer = (
 				f"I am not confident about this answer. I've escalated this to the "
 				f"Senior Research Associate for review (Escalation ID: {escalation_id}).\n\n"
-				f"Preliminary context: {answer[:200]}"
+				f"Preliminary context: {answer[:LOW_CONFIDENCE_ANSWER_PREVIEW_LENGTH]}"
 			)
 			escalated = True
 		elif confidence == ConfidenceLevel.MEDIUM:

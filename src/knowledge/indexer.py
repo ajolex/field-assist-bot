@@ -89,11 +89,14 @@ class KnowledgeIndexer:
 			sections = self._parse_markdown_sections(content)
 
 			for section_path, section_text in sections:
+				# Sanitize section path for chunk ID
+				safe_section_path = section_path.replace(" > ", "__").replace(" ", "_")
+
 				# If section is large, chunk it
 				if len(section_text) > 512:
 					text_chunks = self._chunk_text(section_text)
 					for index, text_chunk in enumerate(text_chunks):
-						chunk_id = f"{markdown_file.stem}-{section_path.replace(' > ', '_')}-{index}"
+						chunk_id = f"{markdown_file.stem}-{safe_section_path}-{index}"
 						chunks.append(
 							KnowledgeChunk(
 								chunk_id=chunk_id,
@@ -105,7 +108,7 @@ class KnowledgeIndexer:
 						)
 				else:
 					# Section is small enough, use as-is
-					chunk_id = f"{markdown_file.stem}-{section_path.replace(' > ', '_')}"
+					chunk_id = f"{markdown_file.stem}-{safe_section_path}"
 					chunks.append(
 						KnowledgeChunk(
 							chunk_id=chunk_id,

@@ -1,5 +1,6 @@
 """Allow running the bot as a module."""
 
-from src.bot import main
+if __name__ == "__main__":
+	from src.bot import main
 
-main()
+	main()
