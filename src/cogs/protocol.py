@@ -17,7 +17,11 @@ class ProtocolCog(commands.Cog):
 	async def protocol(self, interaction: discord.Interaction, question: str) -> None:
 		"""Answer protocol question with confidence tag."""
 
-		answer, confidence = await self.bot.protocol_service.answer_question(question)
+		user_id = str(interaction.user.id)
+		channel = f"#{interaction.channel.name}" if interaction.channel else "#unknown"
+		answer, confidence = await self.bot.protocol_service.answer_question(
+			question, user_id=user_id, channel=channel
+		)
 		await interaction.response.send_message(f"{answer}\n\nConfidence: {confidence.value}")
 
 	@commands.Cog.listener()
@@ -32,7 +36,11 @@ class ProtocolCog(commands.Cog):
 			question = message.content.replace(self.bot.user.mention, "").strip()
 			if not question:
 				return
-			answer, confidence = await self.bot.protocol_service.answer_question(question)
+			user_id = str(message.author.id)
+			channel = f"#{message.channel.name}" if message.channel else "#unknown"
+			answer, confidence = await self.bot.protocol_service.answer_question(
+				question, user_id=user_id, channel=channel
+			)
 			await message.reply(f"{answer}\nConfidence: {confidence.value}")
 
 
