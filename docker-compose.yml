@@ -1,24 +1,28 @@
-version: "3.9"
 services:
   bot:
     build: .
     container_name: field-assist-bot
     env_file:
       - .env
-    command: ["python", "-m", "src.bot"]
-    depends_on:
-      - postgres
-  postgres:
-    image: postgres:16-alpine
-    container_name: field-assist-postgres
-    environment:
-      POSTGRES_DB: field_assist
-      POSTGRES_USER: field_assist
-      POSTGRES_PASSWORD: field_assist
-    ports:
-      - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./docs/knowledge_base:/app/docs/knowledge_base
+      - bot-data:/app/data
+    command: ["python", "-m", "src.bot"]
+    restart: unless-stopped
+
+  # Optional Postgres service (uncomment to use Postgres instead of SQLite)
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: field-assist-postgres
+  #   environment:
+  #     POSTGRES_DB: field_assist
+  #     POSTGRES_USER: field_assist
+  #     POSTGRES_PASSWORD: field_assist
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
 
 volumes:
-  pgdata:
+  bot-data:
+  # pgdata:  # Uncomment if using Postgres

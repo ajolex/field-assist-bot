@@ -119,7 +119,15 @@ class FieldAssistBot(commands.Bot):
 
 		content = self.announcement_service.from_template("morning_briefing", target="3.5/day")
 		await self.announcement_service.log_announcement("morning_briefing", "#general", content)
-		self.log.info("scheduler.morning_briefing", content=content)
+
+		# Send to Discord channel if configured
+		if settings.general_channel_id:
+			channel = self.get_channel(settings.general_channel_id)
+			if channel and hasattr(channel, "send"):
+				await channel.send(content)
+				self.log.info("scheduler.morning_briefing.sent", channel_id=settings.general_channel_id)
+		else:
+			self.log.info("scheduler.morning_briefing", content=content)
 
 	async def run_evening_summary(self) -> None:
 		"""Scheduled evening summary hook."""
@@ -128,7 +136,15 @@ class FieldAssistBot(commands.Bot):
 		summary = f"completed={progress['completed']:.1f}, rate={progress['rate']:.1f}%"
 		content = self.announcement_service.from_template("evening_summary", summary=summary)
 		await self.announcement_service.log_announcement("evening_summary", "#general", content)
-		self.log.info("scheduler.evening_summary", content=content)
+
+		# Send to Discord channel if configured
+		if settings.general_channel_id:
+			channel = self.get_channel(settings.general_channel_id)
+			if channel and hasattr(channel, "send"):
+				await channel.send(content)
+				self.log.info("scheduler.evening_summary.sent", channel_id=settings.general_channel_id)
+		else:
+			self.log.info("scheduler.evening_summary", content=content)
 
 	async def monitor_form_versions(self) -> None:
 		"""Scheduled form version monitor hook."""
@@ -137,7 +153,16 @@ class FieldAssistBot(commands.Bot):
 		for form, version in versions.items():
 			content = self.announcement_service.from_template("form_update", form=form, version=version)
 			await self.announcement_service.log_announcement("form_update", "#scto", content)
-		self.log.info("scheduler.form_version_monitor", forms=len(versions))
+
+			# Send to Discord channel if configured
+			if settings.scto_channel_id:
+				channel = self.get_channel(settings.scto_channel_id)
+				if channel and hasattr(channel, "send"):
+					await channel.send(content)
+					self.log.info("scheduler.form_version_monitor.sent", channel_id=settings.scto_channel_id)
+
+		if not settings.scto_channel_id:
+			self.log.info("scheduler.form_version_monitor", forms=len(versions))
 
 
 async def start_bot() -> None:

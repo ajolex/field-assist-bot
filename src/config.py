@@ -33,5 +33,10 @@ class Settings(BaseSettings):
 	log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 	timezone: str = Field(default="Asia/Manila", alias="TIMEZONE")
 
+	bot_admin_channel_id: int = Field(default=0, alias="BOT_ADMIN_CHANNEL_ID")
+	general_channel_id: int = Field(default=0, alias="GENERAL_CHANNEL_ID")
+	scto_channel_id: int = Field(default=0, alias="SCTO_CHANNEL_ID")
+	sra_discord_user_id: int = Field(default=0, alias="SRA_DISCORD_USER_ID")
+
 
 settings = Settings()
