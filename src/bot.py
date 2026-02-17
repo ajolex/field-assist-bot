@@ -44,6 +44,7 @@ COGS = [
 	"src.cogs.announcements",
 	"src.cogs.triage",
 	"src.cogs.automation",
+	"src.cogs.remote_control",
 ]
 
 

@@ -85,6 +85,12 @@ class Settings(BaseSettings):
 	)
 	default_issue_owner: str = Field(default="FC", alias="DEFAULT_ISSUE_OWNER")
 
+	# Remote control — private automation channel
+	automation_channel_id: int = Field(default=0, alias="AUTOMATION_CHANNEL_ID")
+	remote_screenshot_quality: int = Field(default=70, alias="REMOTE_SCREENSHOT_QUALITY")
+	remote_file_max_mb: int = Field(default=25, alias="REMOTE_FILE_MAX_MB")
+	remote_cmd_timeout: int = Field(default=60, alias="REMOTE_CMD_TIMEOUT")
+
 	stata_executable: str = Field(default="stata-mp", alias="STATA_EXECUTABLE")
 	stata_run_timeout_seconds: int = Field(default=1800, alias="STATA_RUN_TIMEOUT_SECONDS")
 	surveycto_sctoapi_date: int = Field(default=0, alias="SURVEYCTO_SCTOAPI_DATE")
