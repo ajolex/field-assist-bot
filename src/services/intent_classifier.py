@@ -37,6 +37,15 @@ _SURVEY_ISSUE_PATTERN = re.compile(
     r"\b(surveycto|xlsform|skip\s*logic|relevance|constraint|calculation|question\s*name|variable)\b",
     re.IGNORECASE,
 )
+_CASE_STATUS_PATTERN = re.compile(
+    (
+        r"\b("
+        r"status|open|opened|close|closed|check|checked|verify|verified|"
+        r"refused|reopen|re-open|reassign|re-assign|assigned"
+        r")\b"
+    ),
+    re.IGNORECASE,
+)
 
 CLASSIFICATION_PROMPT = """You are an intent classifier for a field research operations Discord bot.
 
@@ -76,7 +85,10 @@ class IntentClassifier:
         # Fast-path: explicit case ID mentioned
         case_match = _CASE_ID_PATTERN.search(text)
         if case_match:
-            return Intent.CASE_LOOKUP, case_match.group(1)
+            case_id = case_match.group(1)
+            if _CASE_STATUS_PATTERN.search(text):
+                return Intent.CASE_STATUS, case_id
+            return Intent.CASE_LOOKUP, case_id
 
         # Fast-path: SurveyCTO form issue phrasing
         if _SURVEY_ISSUE_PATTERN.search(text):

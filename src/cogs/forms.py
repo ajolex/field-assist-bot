@@ -18,7 +18,7 @@ class FormsCog(commands.Cog):
 		"""Return form version map."""
 
 		await interaction.response.defer()
-		versions = await self.bot.survey_client.get_form_versions()
+		versions = await self.bot.get_form_versions()
 		lines = [f"{name}: {version}" for name, version in versions.items()]
 		await interaction.followup.send("\n".join(lines) or "No form versions found.")
 
@@ -27,7 +27,7 @@ class FormsCog(commands.Cog):
 		"""Return a placeholder changelog summary."""
 
 		await interaction.response.defer()
-		versions = await self.bot.survey_client.get_form_versions()
+		versions = await self.bot.get_form_versions()
 		lines = [f"Updated: {name} → {version}" for name, version in versions.items()]
 		await interaction.followup.send("\n".join(lines) or "No changelog entries.")
 

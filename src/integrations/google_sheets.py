@@ -18,6 +18,10 @@ log = get_logger("google_sheets")
 class GoogleSheetsClient:
 	"""Async wrapper for assignment and productivity data."""
 
+	@staticmethod
+	def _normalize_header(value: object) -> str:
+		return str(value or "").strip().lower().replace(" ", "_")
+
 	def __init__(self) -> None:
 		self.has_credentials = bool(settings.google_service_account_json)
 		if self.has_credentials:
@@ -175,3 +179,59 @@ class GoogleSheetsClient:
 				sections.append(f"Form {form_name}:\n" + "\n".join(matches))
 
 		return "\n\n".join(sections)
+
+	async def read_form_versions_from_settings(self) -> dict[str, str]:
+		"""Read form versions from each configured form sheet `Settings` tab."""
+
+		if not self.has_credentials:
+			return {}
+
+		def _read() -> dict[str, str]:
+			versions: dict[str, str] = {}
+			for form_key, sheet_id in settings.surveycto_form_sheet_ids.items():
+				try:
+					sheet = self.client.open_by_key(sheet_id)
+					worksheet = None
+					for candidate in sheet.worksheets():
+						if candidate.title.strip().lower() == "settings":
+							worksheet = candidate
+							break
+					if worksheet is None:
+						raise ValueError("Settings")
+					values = worksheet.get_all_values()
+				except Exception as error:
+					log.error(
+						"google_sheets.read_form_versions.settings_failed",
+						form=form_key,
+						sheet_id=sheet_id,
+						error=str(error),
+					)
+					continue
+
+				if len(values) < 2:
+					continue
+
+				headers = [self._normalize_header(item) for item in values[0]]
+				row = values[1]
+				if len(row) < len(headers):
+					row = row + [""] * (len(headers) - len(row))
+
+				row_dict = {
+					header: str(value or "").strip()
+					for header, value in zip(headers, row, strict=False)
+				}
+
+				version = row_dict.get("version", "").strip()
+				if not version:
+					continue
+
+				form_name = (
+					row_dict.get("form_title", "").strip()
+					or row_dict.get("form_id", "").strip()
+					or form_key
+				)
+				versions[form_name] = version
+
+			return versions
+
+		return await asyncio.to_thread(_read)

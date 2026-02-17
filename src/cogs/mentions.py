@@ -166,7 +166,7 @@ class MentionCog(commands.Cog):
 
         if intent == Intent.FORM_VERSION:
             try:
-                versions = await self.bot.survey_client.get_form_versions()
+                versions = await self.bot.get_form_versions()
                 if not versions:
                     return "No form version data available right now."
                 lines = [f"**{name}**: {version}" for name, version in versions.items()]

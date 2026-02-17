@@ -45,6 +45,12 @@ class Settings(BaseSettings):
 	surveycto_server_name: str = Field(default="", alias="SURVEYCTO_SERVER_NAME")
 	surveycto_username: str = Field(default="", alias="SURVEYCTO_USERNAME")
 	surveycto_password: str = Field(default="", alias="SURVEYCTO_PASSWORD")
+	surveycto_cases_data_id: str = Field(default="", alias="SURVEYCTO_CASES_DATA_ID")
+	surveycto_cases_form_id: str = Field(default="cases_icm", alias="SURVEYCTO_CASES_FORM_ID")
+	surveycto_cases_csv_path: str = Field(
+		default=".cache/cases_icm.csv",
+		alias="SURVEYCTO_CASES_CSV_PATH",
+	)
 
 	database_url: str = Field(default="sqlite+aiosqlite:///./field_assist.db", alias="DATABASE_URL")
 
@@ -57,6 +63,72 @@ class Settings(BaseSettings):
 	general_channel_id: int = Field(default=0, alias="GENERAL_CHANNEL_ID")
 	scto_channel_id: int = Field(default=0, alias="SCTO_CHANNEL_ID")
 	sra_discord_user_id: int = Field(default=0, alias="SRA_DISCORD_USER_ID")
+	fm_role_id: int = Field(default=0, alias="FM_ROLE_ID")
+	fc_role_id: int = Field(default=0, alias="FC_ROLE_ID")
+	progress_exceptions_channel_id: int = Field(default=0, alias="PROGRESS_EXCEPTIONS_CHANNEL_ID")
+	progress_exceptions_hour: int = Field(default=19, alias="PROGRESS_EXCEPTIONS_HOUR")
+	progress_exceptions_minute: int = Field(default=30, alias="PROGRESS_EXCEPTIONS_MINUTE")
+	progress_exception_min_target: float = Field(default=2.0, alias="PROGRESS_EXCEPTION_MIN_TARGET")
+	progress_exception_drop_threshold: float = Field(
+		default=1.0,
+		alias="PROGRESS_EXCEPTION_DROP_THRESHOLD",
+	)
+	progress_snapshots_path: str = Field(
+		default=".cache/progress_snapshots.jsonl",
+		alias="PROGRESS_SNAPSHOTS_PATH",
+	)
+
+	issue_records_path: str = Field(default=".cache/field_issues.json", alias="ISSUE_RECORDS_PATH")
+	issue_status_log_path: str = Field(
+		default=".cache/issue_status_log.jsonl",
+		alias="ISSUE_STATUS_LOG_PATH",
+	)
+	default_issue_owner: str = Field(default="FC", alias="DEFAULT_ISSUE_OWNER")
+
+	stata_executable: str = Field(default="stata-mp", alias="STATA_EXECUTABLE")
+	stata_run_timeout_seconds: int = Field(default=1800, alias="STATA_RUN_TIMEOUT_SECONDS")
+	surveycto_sctoapi_date: int = Field(default=0, alias="SURVEYCTO_SCTOAPI_DATE")
+	remote_jobs_log_path: str = Field(default=".cache/remote_jobs_log.jsonl", alias="REMOTE_JOBS_LOG_PATH")
+	surveycto_form_household_id: str = Field(
+		default="ICM_follow_up_launch_integrated",
+		alias="SURVEYCTO_FORM_HOUSEHOLD_ID",
+	)
+	surveycto_form_business_id: str = Field(
+		default="ICM_Business_linked_launch",
+		alias="SURVEYCTO_FORM_BUSINESS_ID",
+	)
+	surveycto_household_csv_path: str = Field(
+		default=(
+			"F:/10_Livelihood/PSPS ICM Livelihoods Study/10_ICM Follow up survey/"
+			"Data Management System/ICM Household survey/4_data/2_survey/"
+			"ICM_follow_up_launch_integrated_WIDE.csv"
+		),
+		alias="SURVEYCTO_HOUSEHOLD_CSV_PATH",
+	)
+	surveycto_business_csv_path: str = Field(
+		default=(
+			"F:/10_Livelihood/PSPS ICM Livelihoods Study/10_ICM Follow up survey/"
+			"Data Management System/ICM Business module/4_data/2_survey/"
+			"ICM_Business_linked_launch_WIDE.csv"
+		),
+		alias="SURVEYCTO_BUSINESS_CSV_PATH",
+	)
+	stata_household_master_do_path: str = Field(
+		default=(
+			"C:/Users/AJolex/Box/"
+			"16566_psps_international_care_ministries_livelihoods/"
+			"06_Data_Management_System/ICM_Household_survey/0_master.do"
+		),
+		alias="STATA_HOUSEHOLD_MASTER_DO_PATH",
+	)
+	stata_business_master_do_path: str = Field(
+		default=(
+			"C:/Users/AJolex/Box/"
+			"16566_psps_international_care_ministries_livelihoods/"
+			"06_Data_Management_System/ICM_Business_module/0_master.do"
+		),
+		alias="STATA_BUSINESS_MASTER_DO_PATH",
+	)
 
 	# Knowledge index settings
 	knowledge_base_path: str = Field(default="docs/knowledge_base", alias="KNOWLEDGE_BASE_PATH")
@@ -123,6 +195,18 @@ class Settings(BaseSettings):
 			"phase_a_revisit": self.google_form_phase_a_revisit_sheet_id,
 		}
 		return {name: sheet_id for name, sheet_id in forms.items() if sheet_id.strip()}
+
+	@property
+	def field_manager_role_id(self) -> int:
+		"""Preferred role ID for productivity exception tagging."""
+
+		return self.fm_role_id or self.fc_role_id
+
+	@property
+	def surveycto_cases_source_id(self) -> str:
+		"""Primary cases source ID, preferring dataset variable name."""
+
+		return self.surveycto_cases_data_id.strip() or self.surveycto_cases_form_id.strip()
 
 
 settings = Settings()

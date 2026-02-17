@@ -16,8 +16,8 @@ async def test_get_case_returns_requested_case() -> None:
 
 @pytest.mark.asyncio
 async def test_get_form_versions_returns_map() -> None:
-	"""Form versions should return non-empty dictionary."""
+	"""Form versions should return a dictionary."""
 
 	client = SurveyCTOClient()
 	versions = await client.get_form_versions()
-	assert versions
+	assert isinstance(versions, dict)

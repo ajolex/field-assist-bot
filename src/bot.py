@@ -25,8 +25,11 @@ from src.services.case_service import CaseService
 from src.services.escalation_service import EscalationService
 from src.services.intent_classifier import Intent, IntentClassifier
 from src.services.progress_service import ProgressService
+from src.services.progress_exceptions_service import ProgressExceptionsService
 from src.services.protocol_service import ProtocolService, _escalation_mention
+from src.services.remote_automation_service import RemoteAutomationService
 from src.services.scheduler_service import SchedulerService
+from src.services.issue_triage_service import IssueTriageService
 from src.services.surveycto_issue_service import SurveyCTOIssueService
 from src.utils.logger import configure_logging, get_logger
 
@@ -39,6 +42,8 @@ COGS = [
 	"src.cogs.assignments",
 	"src.cogs.forms",
 	"src.cogs.announcements",
+	"src.cogs.triage",
+	"src.cogs.automation",
 ]
 
 
@@ -64,10 +69,13 @@ class FieldAssistBot(commands.Bot):
 		self.announcement_repository = AnnouncementRepository()
 
 		self.escalation_service = EscalationService(self.escalation_repository)
-		self.case_service = CaseService(self.survey_client)
+		self.case_service = CaseService(self.survey_client, self.escalation_service)
 		self.assignment_service = AssignmentService(self.sheets_client)
 		self.progress_service = ProgressService(self.sheets_client)
+		self.progress_exceptions_service = ProgressExceptionsService(self.sheets_client)
 		self.announcement_service = AnnouncementService(self.announcement_repository)
+		self.issue_triage_service = IssueTriageService(self.openai_client)
+		self.remote_automation_service = RemoteAutomationService(self.survey_client)
 		# protocol_service is finalized in setup_hook after async index build
 		self.protocol_service: ProtocolService | None = None
 		self.scheduler_service = SchedulerService(settings.timezone)
@@ -137,6 +145,12 @@ class FieldAssistBot(commands.Bot):
 			hour=19,
 			minute=0,
 			job_id="evening_summary",
+		)
+		self.scheduler_service.schedule_cron(
+			self.run_progress_exceptions,
+			hour=settings.progress_exceptions_hour,
+			minute=settings.progress_exceptions_minute,
+			job_id="progress_exceptions",
 		)
 		self.scheduler_service.schedule_cron(
 			self.monitor_form_versions,
@@ -275,14 +289,14 @@ class FieldAssistBot(commands.Bot):
 
 		if intent == Intent.GREETING:
 			return (
-				"\U0001f44b Hey! I'm Field Assist Bot. Ask me about:\n"
-				"\u2022 **Protocol** \u2014 survey procedures, field scenarios\n"
-				"\u2022 **SurveyCTO Issues** \u2014 skip logic/relevance/constraint troubleshooting\n"
-				"\u2022 **Cases** \u2014 look up a case by ID\n"
-				"\u2022 **Assignments** \u2014 who is assigned where\n"
-				"\u2022 **Progress** \u2014 team productivity\n"
-				"\u2022 **Forms** \u2014 current form versions\n\n"
-				"Just tag me with your question!"
+				"👋 Hey! I'm Field Assist Bot — Aubrey's assistant. Ask me about:\n"
+				"• **Protocol** — survey procedures, field scenarios\n"
+				"• **SurveyCTO Issues** — skip logic/relevance/constraint troubleshooting\n"
+				"• **Cases** — look up a case by ID\n"
+				"• **Assignments** — who is assigned where\n"
+				"• **Progress** — team productivity\n"
+				"• **Forms** — current form versions\n\n"
+				"Just tag me with your question! Halong! 🙌"
 			)
 
 		if intent == Intent.CASE_LOOKUP and param:
@@ -292,7 +306,12 @@ class FieldAssistBot(commands.Bot):
 			return format_case_embed_text(redacted)
 
 		if intent == Intent.CASE_STATUS and param:
-			return await self.case_service.case_status(param)
+			return await self.case_service.case_status(
+				param,
+				requester=user_id,
+				channel=channel,
+				request_text=question,
+			)
 
 		if intent == Intent.PROGRESS:
 			from src.utils.formatters import format_progress_text
@@ -300,7 +319,7 @@ class FieldAssistBot(commands.Bot):
 			return format_progress_text(values, "\U0001f4ca Overall Progress")
 
 		if intent == Intent.FORM_VERSION:
-			versions = await self.survey_client.get_form_versions()
+			versions = await self.get_form_versions()
 			if not versions:
 				return "No form version data available right now."
 			lines = [f"**{name}**: {version}" for name, version in versions.items()]
@@ -450,6 +469,16 @@ class FieldAssistBot(commands.Bot):
 			changed_docs=stats.changed_docs,
 		)
 
+	async def get_form_versions(self) -> dict[str, str]:
+		"""Get form versions from SurveyCTO Google Sheet Settings tabs."""
+
+		versions = await self.sheets_client.read_form_versions_from_settings()
+		if versions:
+			return versions
+
+		self.log.warning("form_versions.settings_tab_empty_or_unavailable")
+		return {}
+
 	async def run_evening_summary(self) -> None:
 		"""Scheduled evening summary hook."""
 
@@ -471,7 +500,7 @@ class FieldAssistBot(commands.Bot):
 	async def monitor_form_versions(self) -> None:
 		"""Scheduled form version monitor hook."""
 
-		versions = await self.survey_client.get_form_versions()
+		versions = await self.get_form_versions()
 		for form, version in versions.items():
 			content = self.announcement_service.from_template("form_update", form=form, version=version)
 			await self.announcement_service.log_announcement("form_update", "#scto", content)
@@ -485,6 +514,27 @@ class FieldAssistBot(commands.Bot):
 
 		if not settings.scto_channel_id:
 			self.log.info("scheduler.form_version_monitor", forms=len(versions))
+
+	async def run_progress_exceptions(self) -> None:
+		"""Post nightly productivity anomalies only (no dashboard dump)."""
+
+		report = await self.progress_exceptions_service.build_nightly_report()
+		if not report.has_anomalies:
+			self.log.info("scheduler.progress_exceptions.none")
+			return
+
+		channel_id = settings.progress_exceptions_channel_id or settings.general_channel_id
+		if channel_id:
+			channel = self.get_channel(channel_id)
+			if channel and hasattr(channel, "send"):
+				await channel.send(
+					report.text,
+					allowed_mentions=discord.AllowedMentions(everyone=True, roles=True, users=True),
+				)
+				self.log.info("scheduler.progress_exceptions.sent", channel_id=channel_id)
+				return
+
+		self.log.info("scheduler.progress_exceptions.fallback", preview=report.text[:400])
 
 
 async def start_bot() -> None:
