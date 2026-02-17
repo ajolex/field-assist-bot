@@ -17,22 +17,24 @@ class AssignmentsCog(commands.Cog):
 	async def assignments(self, interaction: discord.Interaction, team_name: str) -> None:
 		"""Return assignments by team."""
 
+		await interaction.response.defer()
 		rows = await self.bot.assignment_service.team_assignments(team_name)
 		if not rows:
-			await interaction.response.send_message(f"No assignments for {team_name}.")
+			await interaction.followup.send(f"No assignments for {team_name}.")
 			return
 		lines = [f"{row['case_id']} → {row['fo']}" for row in rows]
-		await interaction.response.send_message("\n".join(lines))
+		await interaction.followup.send("\n".join(lines))
 
 	@app_commands.command(name="where_is", description="Find team for a case")
 	async def where_is(self, interaction: discord.Interaction, case_id: str) -> None:
 		"""Return assignment row for given case ID."""
 
+		await interaction.response.defer()
 		row = await self.bot.assignment_service.where_is_case(case_id)
 		if row is None:
-			await interaction.response.send_message("Case not found in assignments.")
+			await interaction.followup.send("Case not found in assignments.")
 			return
-		await interaction.response.send_message(
+		await interaction.followup.send(
 			f"{case_id} is assigned to {row['team']} ({row['fo']})"
 		)
 
@@ -40,11 +42,12 @@ class AssignmentsCog(commands.Cog):
 	async def team_for(self, interaction: discord.Interaction, fo_name: str) -> None:
 		"""Return team for a field officer."""
 
+		await interaction.response.defer()
 		team = await self.bot.assignment_service.team_for_fo(fo_name)
 		if team is None:
-			await interaction.response.send_message("FO not found.")
+			await interaction.followup.send("FO not found.")
 			return
-		await interaction.response.send_message(f"{fo_name} is assigned to {team}")
+		await interaction.followup.send(f"{fo_name} is assigned to {team}")
 
 
 async def setup(bot: FieldAssistBot) -> None:

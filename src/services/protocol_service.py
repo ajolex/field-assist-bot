@@ -1,5 +1,6 @@
 """Protocol question-answering business logic."""
 
+from src.config import settings
 from src.db.repositories.interaction_repo import InteractionRepository
 from src.integrations.openai_client import OpenAIClient
 from src.knowledge.confidence import assess_confidence
@@ -10,7 +11,18 @@ from src.services.escalation_service import EscalationService
 
 
 # Constants
-LOW_CONFIDENCE_ANSWER_PREVIEW_LENGTH = 200
+LOW_CONFIDENCE_ANSWER_PREVIEW_LENGTH = 1500
+
+
+def _escalation_mention() -> str:
+	"""Build the Discord mention string for the escalation target.
+
+	Uses the numeric Discord user ID for a real @mention if available,
+	otherwise falls back to the display name.
+	"""
+	if settings.escalation_discord_user_id:
+		return f"<@{settings.escalation_discord_user_id}>"
+	return f"@{settings.escalation_display_name}"
 
 
 class ProtocolService:
@@ -43,8 +55,10 @@ class ProtocolService:
 		7. Return answer and confidence
 		"""
 
+		mention = _escalation_mention()
+
 		# Step 1: Retrieve relevant chunks
-		matches = self.retriever.search(question, top_k=4)
+		matches = await self.retriever.search(question, top_k=4)
 
 		# Step 2: Build prompt
 		messages = build_prompt(question, matches)
@@ -64,7 +78,7 @@ class ProtocolService:
 		# Step 4: Assess confidence
 		confidence = await assess_confidence(question, answer, matches, self.openai_client)
 
-		# Step 5: Apply escalation rules
+		# Step 5: Apply escalation rules — ALL escalations go to Aubrey only
 		escalated = False
 		if confidence == ConfidenceLevel.LOW:
 			escalation_id = await self.escalation_service.create_escalation(
@@ -74,22 +88,18 @@ class ProtocolService:
 				question=question,
 			)
 			answer = (
-				f"I am not confident about this answer. I've escalated this to the "
-				f"Senior Research Associate for review (Escalation ID: {escalation_id}).\n\n"
+				f"🔔 I'm not confident enough to answer this on my own. "
+				f"I've escalated this to {mention} for review "
+				f"(Escalation ID: {escalation_id}).\n\n"
 				f"Preliminary context: {answer[:LOW_CONFIDENCE_ANSWER_PREVIEW_LENGTH]}"
 			)
 			escalated = True
 		elif confidence == ConfidenceLevel.MEDIUM:
 			answer = (
-				f"{answer}\n\n⚠️ *Medium confidence* - Please verify with the "
-				"Senior Research Associate if critical."
+				f"{answer}\n\n"
+				f"⚠️ *Medium confidence* — {mention}, can you confirm this "
+				f"if the FO considers it critical?"
 			)
-
-		# Include source document references
-		if matches:
-			sources = list({chunk.source_doc for chunk in matches})
-			source_text = ", ".join(sources)
-			answer += f"\n\n📚 Sources: {source_text}"
 
 		# Step 6: Log interaction
 		await self.interaction_repository.create(

@@ -30,7 +30,7 @@ MVP foundation across all phases is implemented:
 - `/assignments`, `/where_is`, `/team_for`
 - `/form_version`, `/form_changelog`
 - `/announce`, `/morning_briefing`
-- `/bot_stats`, `/reload_kb`, `/set_version`, `/resolve`, `/escalation_stats`
+- `/bot_stats`, `/reload_kb`, `/kb_candidates`, `/promote_candidate`, `/set_version`, `/resolve`, `/escalation_stats`
 
 ## Health service
 
@@ -42,3 +42,14 @@ MVP foundation across all phases is implemented:
 - `ruff check .`
 - `mypy src`
 - `pytest`
+
+## Knowledge indexing (persistent RAG cache)
+
+- On bot startup, the knowledge index is loaded from `KNOWLEDGE_INDEX_CACHE_PATH` when unchanged.
+- Only changed/new markdown docs are re-embedded; unchanged docs reuse cached vectors.
+- Protocol answers no longer append a `📚 Sources:` list in user-facing replies.
+- While running, the bot periodically scans for newly added `*.md` docs and reindexes only when new files are detected.
+- Build/update the cache manually:
+   - `python scripts/index_knowledge_base.py`
+- Force full re-embedding:
+   - `python scripts/index_knowledge_base.py --force`

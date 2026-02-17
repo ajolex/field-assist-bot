@@ -19,27 +19,30 @@ class CasesCog(commands.Cog):
 	async def check_case(self, interaction: discord.Interaction, case_id: str) -> None:
 		"""Return redacted case details."""
 
+		await interaction.response.defer()
 		case = await self.bot.case_service.lookup_case(case_id)
 		redacted = self.bot.case_service.redact_pii(case)
-		await interaction.response.send_message(format_case_embed_text(redacted))
+		await interaction.followup.send(format_case_embed_text(redacted))
 
 	@app_commands.command(name="case_status", description="Get case status summary")
 	async def case_status(self, interaction: discord.Interaction, case_id: str) -> None:
 		"""Return quick status text."""
 
+		await interaction.response.defer()
 		status = await self.bot.case_service.case_status(case_id)
-		await interaction.response.send_message(status)
+		await interaction.followup.send(status)
 
 	@app_commands.command(name="team_cases", description="List open cases for a team")
 	async def team_cases(self, interaction: discord.Interaction, team_name: str) -> None:
 		"""List open cases for selected team."""
 
+		await interaction.response.defer()
 		cases = await self.bot.case_service.team_cases(team_name)
 		if not cases:
-			await interaction.response.send_message(f"No open cases found for {team_name}.")
+			await interaction.followup.send(f"No open cases found for {team_name}.")
 			return
 		lines = [f"{case.case_id} ({case.barangay or 'unknown barangay'})" for case in cases]
-		await interaction.response.send_message("\n".join(lines))
+		await interaction.followup.send("\n".join(lines))
 
 	@app_commands.command(name="request_reopen", description="Request case reopening")
 	async def request_reopen(
@@ -54,6 +57,7 @@ class CasesCog(commands.Cog):
 		if not has_any_role(member, {SRA_ROLE, FC_ROLE}):
 			await interaction.response.send_message("insufficient permissions", ephemeral=True)
 			return
+		await interaction.response.defer()
 		await self.bot.case_service.request_reopen(case_id, interaction.user.name, reason)
 		escalation_id = await self.bot.escalation_service.create_escalation(
 			requester=interaction.user.name,
@@ -61,7 +65,7 @@ class CasesCog(commands.Cog):
 			channel=f"#{interaction.channel.name if interaction.channel else 'unknown'}",
 			case_id=case_id,
 		)
-		await interaction.response.send_message(format_escalation_text(escalation_id))
+		await interaction.followup.send(format_escalation_text(escalation_id))
 
 
 async def setup(bot: FieldAssistBot) -> None:

@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 from math import sqrt
 
-from openai import AsyncOpenAI, APIError, RateLimitError
+from openai import AsyncOpenAI, APIError, BadRequestError, RateLimitError
 
 from src.config import settings
 from src.utils.logger import get_logger
@@ -78,6 +78,38 @@ class OpenAIClient:
 		except (APIError, RateLimitError) as e:
 			log.error("openai.embed_error", error=str(e))
 			return self._deterministic_embed(text, 32)
+
+	async def embed_text_async(self, text: str, dimensions: int = 32) -> list[float]:
+		"""Async-safe embedding method for use within a running event loop."""
+
+		if not self.has_api_key:
+			return self._deterministic_embed(text, dimensions)
+		return await self._embed_text_async(text)
+
+	async def embed_batch_async(self, texts: list[str]) -> list[list[float]]:
+		"""Embed multiple texts in batches via the OpenAI API."""
+
+		if not self.has_api_key or not texts:
+			return [self._deterministic_embed(t, 32) for t in texts]
+
+		# Replace empty/whitespace-only strings — OpenAI rejects them
+		cleaned: list[str] = [t.strip() if t.strip() else "empty" for t in texts]
+
+		all_embeddings: list[list[float]] = []
+		BATCH = 50
+		for i in range(0, len(cleaned), BATCH):
+			batch = cleaned[i : i + BATCH]
+			try:
+				response = await self.client.embeddings.create(
+					model=settings.openai_embedding_model,
+					input=batch,
+				)
+				all_embeddings.extend(item.embedding for item in response.data)
+			except Exception as e:
+				log.error("openai.batch_embed_error", error=str(e), batch_start=i, batch_size=len(batch))
+				all_embeddings.extend(self._deterministic_embed(t, 32) for t in batch)
+
+		return all_embeddings
 
 	async def answer_with_context(self, question: str, context: str) -> str:
 		"""Return context-grounded response using chat completions."""

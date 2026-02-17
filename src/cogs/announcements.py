@@ -27,6 +27,7 @@ class AnnouncementsCog(commands.Cog):
 		if not has_any_role(member, {SRA_ROLE}):
 			await interaction.response.send_message("insufficient permissions", ephemeral=True)
 			return
+		await interaction.response.defer()
 		key = "summary" if template == "evening_summary" else "target"
 		if template == "form_update":
 			content = self.bot.announcement_service.from_template(
@@ -41,19 +42,20 @@ class AnnouncementsCog(commands.Cog):
 			f"#{interaction.channel.name if interaction.channel else 'unknown'}",
 			content,
 		)
-		await interaction.response.send_message(content)
+		await interaction.followup.send(content)
 
 	@app_commands.command(name="morning_briefing", description="Manual morning briefing")
 	async def morning_briefing(self, interaction: discord.Interaction) -> None:
 		"""Send standard morning briefing announcement."""
 
+		await interaction.response.defer()
 		content = self.bot.announcement_service.from_template("morning_briefing", target="3.5/day")
 		await self.bot.announcement_service.log_announcement(
 			"morning_briefing",
 			f"#{interaction.channel.name if interaction.channel else 'unknown'}",
 			content,
 		)
-		await interaction.response.send_message(content)
+		await interaction.followup.send(content)
 
 
 async def setup(bot: FieldAssistBot) -> None:

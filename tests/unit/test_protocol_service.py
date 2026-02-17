@@ -21,7 +21,8 @@ async def test_answer_question_returns_low_confidence_placeholder() -> None:
 
 	await init_db()
 	indexer = KnowledgeIndexer(Path("docs/knowledge_base"), OpenAIClient())
-	retriever = KnowledgeRetriever(indexer.build_index(), OpenAIClient())
+	chunks, _ = await indexer.build_index()
+	retriever = KnowledgeRetriever(chunks, OpenAIClient())
 	service = ProtocolService(
 		retriever,
 		OpenAIClient(),

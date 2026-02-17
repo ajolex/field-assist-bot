@@ -11,10 +11,10 @@ class KnowledgeRetriever:
 		self.chunks = chunks
 		self.openai_client = openai_client
 
-	def search(self, question: str, top_k: int = 4) -> list[KnowledgeChunk]:
+	async def search(self, question: str, top_k: int = 4) -> list[KnowledgeChunk]:
 		"""Return top-k best matching chunks."""
 
-		query_embedding = self.openai_client.embed_text(question)
+		query_embedding = await self.openai_client.embed_text_async(question)
 		scored = [
 			(cosine_similarity(query_embedding, chunk.embedding), chunk)
 			for chunk in self.chunks

@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from src.bot import FieldAssistBot
+from src.services.protocol_service import _escalation_mention
 
 
 class ProtocolCog(commands.Cog):
@@ -17,31 +18,16 @@ class ProtocolCog(commands.Cog):
 	async def protocol(self, interaction: discord.Interaction, question: str) -> None:
 		"""Answer protocol question with confidence tag."""
 
+		await interaction.response.defer()
 		user_id = str(interaction.user.id)
 		channel = f"#{interaction.channel.name}" if interaction.channel else "#unknown"
 		answer, confidence = await self.bot.protocol_service.answer_question(
 			question, user_id=user_id, channel=channel
 		)
-		await interaction.response.send_message(f"{answer}\n\nConfidence: {confidence.value}")
-
-	@commands.Cog.listener()
-	async def on_message(self, message: discord.Message) -> None:
-		"""Answer natural language questions when bot is mentioned."""
-
-		if message.author.bot:
-			return
-		if self.bot.user is None:
-			return
-		if self.bot.user.mentioned_in(message):
-			question = message.content.replace(self.bot.user.mention, "").strip()
-			if not question:
-				return
-			user_id = str(message.author.id)
-			channel = f"#{message.channel.name}" if message.channel else "#unknown"
-			answer, confidence = await self.bot.protocol_service.answer_question(
-				question, user_id=user_id, channel=channel
-			)
-			await message.reply(f"{answer}\nConfidence: {confidence.value}")
+		await interaction.followup.send(
+			f"{answer}\n\nConfidence: {confidence.value}"
+			f"\n\n---\n💬 *Not satisfied with this answer? Feel free to reach out to my boss {_escalation_mention()} directly.*"
+		)
 
 
 async def setup(bot: FieldAssistBot) -> None:

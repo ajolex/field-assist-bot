@@ -1,14 +1,32 @@
 # Bot Escalation Rules
 
-> Defines when the bot should answer autonomously vs. escalate to a human (SRA/FC).
+> Defines when the bot should answer autonomously vs. escalate.
+>
+> ⚠️ **ALL escalations go ONLY to Aubrey (SRA, Discord: `ajolex0306`)**
+> The bot must NEVER escalate to FCs, FM, or anyone else.
+> Aubrey is the single point of escalation for the bot.
+
+## Escalation Target
+
+| Field | Value |
+|-------|-------|
+| **Name** | Aubrey Jolex |
+| **Role** | Senior Research Associate (SRA) |
+| **Discord Username** | `ajolex0306` |
+| **Discord Mention** | `@Aubrey` |
+
+> FCs and FM handle escalations from FOs **directly** (human-to-human).
+> The **bot** only escalates to Aubrey. This is by design — Aubrey is the
+> only person with access to SurveyCTO server, case datasets, and protocol
+> decision authority.
 
 ## Confidence-Based Escalation
 
 | Confidence Level | Action |
 |-----------------|--------|
-| **High** — Question matches protocol or FAQ exactly | Answer directly |
+| **High** — Question matches protocol or FAQ exactly | Answer directly. No escalation. |
 | **Medium** — Question is similar to known scenarios but has a twist | Answer with a caveat: "Based on the protocol, [answer]. However, this situation has some unique aspects. @Aubrey can you confirm?" |
-| **Low** — Question is novel, ambiguous, or involves a judgment call | Tag SRA: "This needs human judgment. @Aubrey, [FO name] is asking: [question]" |
+| **Low** — Question is novel, ambiguous, or involves a judgment call | Do NOT answer. Tag Aubrey: "This needs human judgment. @Aubrey, [FO name] is asking: [question]" |
 
 ## Always Answer Autonomously
 
@@ -21,11 +39,14 @@
 - ✅ Definition questions (household, resident, non-resident, etc.)
 - ✅ Survey module guidance (how to record a business vs. employment)
 - ✅ Productivity updates (from Google Sheet)
+- ✅ Team roster lookups ("Who is my FC?", "What team is Mariel on?")
+- ✅ Data collection log precedents (known rulings from baseline)
+- ✅ Survey flow / skip logic explanations ("Why was agriculture skipped?")
 
-## Always Escalate to Human
+## Always Escalate to Aubrey
 
 - 🚨 Cases requiring SurveyCTO server action (reopen, reassign, delete)
-- 🚨 Novel field situations not covered in protocol or FAQ
+- 🚨 Novel field situations not covered in protocol, FAQ, or data collection log
 - 🚨 Safety/security incidents
 - 🚨 Harassment reports
 - 🚨 Respondent complaints about the study or IPA
