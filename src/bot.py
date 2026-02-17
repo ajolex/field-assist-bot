@@ -27,6 +27,7 @@ from src.services.intent_classifier import Intent, IntentClassifier
 from src.services.progress_service import ProgressService
 from src.services.protocol_service import ProtocolService, _escalation_mention
 from src.services.scheduler_service import SchedulerService
+from src.services.surveycto_issue_service import SurveyCTOIssueService
 from src.utils.logger import configure_logging, get_logger
 
 
@@ -71,6 +72,7 @@ class FieldAssistBot(commands.Bot):
 		self.protocol_service: ProtocolService | None = None
 		self.scheduler_service = SchedulerService(settings.timezone)
 		self.intent_classifier: IntentClassifier | None = None
+		self.surveycto_issue_service = SurveyCTOIssueService(self.sheets_client, self.openai_client)
 		self._knowledge_docs_seen: set[str] = set()
 		self.knowledge_collector = KnowledgeCollector(Path(settings.knowledge_candidates_path))
 
@@ -87,7 +89,10 @@ class FieldAssistBot(commands.Bot):
 		)
 		chunks, index_stats = await indexer.build_index()
 		self.retriever = KnowledgeRetriever(chunks, self.openai_client)
-		self._knowledge_docs_seen = {path.name for path in Path(settings.knowledge_base_path).glob("*.md")}
+		kb_base = Path(settings.knowledge_base_path)
+		self._knowledge_docs_seen = {
+			path.relative_to(kb_base).as_posix() for path in kb_base.rglob("*.md")
+		}
 		self.log.info(
 			"knowledge.indexed",
 			chunk_count=index_stats.chunk_count,
@@ -207,6 +212,32 @@ class FieldAssistBot(commands.Bot):
 		question = question.replace(f"<@{self.user.id}>", "")
 		question = question.replace(f"<@!{self.user.id}>", "")
 		question = question.strip()
+		if message.attachments:
+			attachment_lines = [
+				f"- {attachment.filename}: {attachment.url}" for attachment in message.attachments
+			]
+			question = f"{question}\n\nAttachments:\n" + "\n".join(attachment_lines)
+
+			image_urls = [
+				attachment.url
+				for attachment in message.attachments
+				if (attachment.content_type or "").startswith("image/")
+				or attachment.filename.lower().endswith(
+					(".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
+				)
+			]
+			if image_urls:
+				image_instruction = (
+					"Extract useful troubleshooting context from these screenshots: "
+					"visible error messages, variable/question names, labels, "
+					"skip/relevance hints, and any values shown. Keep concise."
+				)
+				image_context = await self.openai_client.extract_image_context(
+					image_urls=image_urls,
+					instruction=image_instruction,
+				)
+				if image_context:
+					question += f"\n\nScreenshot context:\n{image_context}"
 		if not question:
 			await message.reply(
 				"\U0001f44b Hi! You can ask me anything \u2014 protocol questions, case lookups, "
@@ -246,6 +277,7 @@ class FieldAssistBot(commands.Bot):
 			return (
 				"\U0001f44b Hey! I'm Field Assist Bot. Ask me about:\n"
 				"\u2022 **Protocol** \u2014 survey procedures, field scenarios\n"
+				"\u2022 **SurveyCTO Issues** \u2014 skip logic/relevance/constraint troubleshooting\n"
 				"\u2022 **Cases** \u2014 look up a case by ID\n"
 				"\u2022 **Assignments** \u2014 who is assigned where\n"
 				"\u2022 **Progress** \u2014 team productivity\n"
@@ -273,6 +305,28 @@ class FieldAssistBot(commands.Bot):
 				return "No form version data available right now."
 			lines = [f"**{name}**: {version}" for name, version in versions.items()]
 			return "\U0001f4cb Current Form Versions:\n" + "\n".join(lines)
+
+		if intent == Intent.SURVEYCTO_ISSUE:
+			diagnosis = await self.surveycto_issue_service.diagnose(question)
+			escalation_details = diagnosis.escalation_payload(
+				reporter=user_id,
+				user_description=question,
+			)
+			escalation_id = await self.escalation_service.create_escalation(
+				requester=user_id,
+				reason=(
+					f"SurveyCTO issue ({diagnosis.issue_type}) "
+					f"variable={diagnosis.variable_name} form={diagnosis.form_name}"
+				),
+				channel=channel,
+				question=escalation_details,
+			)
+			mention = _escalation_mention()
+			return (
+				f"{diagnosis.fo_response()}\n\n"
+				f"\U0001f514 I've escalated this to {mention} for a form fix review "
+				f"(Escalation ID: **{escalation_id}**)."
+			)
 
 		if intent == Intent.ESCALATION:
 			escalation_id = await self.escalation_service.create_escalation(
@@ -371,7 +425,7 @@ class FieldAssistBot(commands.Bot):
 		"""Reindex only when new markdown files are added to KB directory."""
 
 		kb_path = Path(settings.knowledge_base_path)
-		current_docs = {path.name for path in kb_path.glob("*.md")}
+		current_docs = {path.relative_to(kb_path).as_posix() for path in kb_path.rglob("*.md")}
 		new_docs = current_docs - self._knowledge_docs_seen
 		if not new_docs:
 			self.log.info("knowledge.scan.no_new_docs", scanned_docs=len(current_docs))

@@ -130,11 +130,16 @@ class KnowledgeIndexer:
 				chunks.append(part)
 		return chunks
 
+	def _relative_doc_path(self, path: Path) -> str:
+		"""Return stable document key relative to KB root."""
+
+		return path.relative_to(self.base_path).as_posix()
+
 	async def build_index(self, force_rebuild: bool = False) -> tuple[list[KnowledgeChunk], KnowledgeIndexStats]:
 		"""Read markdown files and produce embedded chunks with incremental cache reuse."""
 
-		markdown_files = sorted(self.base_path.glob("*.md"))
-		current_hashes = {path.name: self._file_hash(path) for path in markdown_files}
+		markdown_files = sorted(self.base_path.rglob("*.md"), key=lambda item: item.as_posix())
+		current_hashes = {self._relative_doc_path(path): self._file_hash(path) for path in markdown_files}
 
 		cache = None if force_rebuild else self._load_cache()
 		cache_model = cache.get("embedding_model") if cache else None
@@ -163,7 +168,7 @@ class KnowledgeIndexer:
 		changed_docs = 0
 
 		for markdown_file in markdown_files:
-			file_name = markdown_file.name
+			file_name = self._relative_doc_path(markdown_file)
 			if (
 				not force_rebuild
 				and cache_model == settings.openai_embedding_model
@@ -179,15 +184,16 @@ class KnowledgeIndexer:
 
 			for section_path, section_text in sections:
 				safe_section_path = section_path.replace(" > ", "__").replace(" ", "_")
+				safe_doc_key = re.sub(r"[^a-zA-Z0-9_-]+", "_", file_name)
 
 				if len(section_text) > 512:
 					text_chunks = self._chunk_text(section_text)
 					for index, text_chunk in enumerate(text_chunks):
-						chunk_id = f"{markdown_file.stem}-{safe_section_path}-{index}"
-						pending.append((chunk_id, markdown_file.name, section_path, text_chunk))
+						chunk_id = f"{safe_doc_key}-{safe_section_path}-{index}"
+						pending.append((chunk_id, file_name, section_path, text_chunk))
 				else:
-					chunk_id = f"{markdown_file.stem}-{safe_section_path}"
-					pending.append((chunk_id, markdown_file.name, section_path, section_text))
+					chunk_id = f"{safe_doc_key}-{safe_section_path}"
+					pending.append((chunk_id, file_name, section_path, section_text))
 
 		# Batch embed only changed/new texts
 		texts = [text for _, _, _, text in pending]

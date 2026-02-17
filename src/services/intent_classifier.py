@@ -18,6 +18,7 @@ class Intent(str, Enum):
     ASSIGNMENTS = "assignments"
     PROGRESS = "progress"
     FORM_VERSION = "form_version"
+    SURVEYCTO_ISSUE = "surveycto_issue"
     ESCALATION = "escalation"
     GREETING = "greeting"
     UNKNOWN = "unknown"
@@ -32,6 +33,10 @@ _GREETING_PATTERN = re.compile(
     r"^(hi|hello|hey|good\s*(morning|afternoon|evening)|sup|yo)\b",
     re.IGNORECASE,
 )
+_SURVEY_ISSUE_PATTERN = re.compile(
+    r"\b(surveycto|xlsform|skip\s*logic|relevance|constraint|calculation|question\s*name|variable)\b",
+    re.IGNORECASE,
+)
 
 CLASSIFICATION_PROMPT = """You are an intent classifier for a field research operations Discord bot.
 
@@ -42,6 +47,7 @@ Classify the user's message into EXACTLY ONE of these intents:
 - ASSIGNMENTS: Questions about who is assigned where, team assignments, field officer locations
 - PROGRESS: Questions about progress, productivity, completion rates, targets, team performance
 - FORM_VERSION: Questions about form versions, form updates, changelogs
+- SURVEYCTO_ISSUE: Reports of form behavior bugs, skip logic problems, relevance/constraint issues, question appearing unexpectedly
 - ESCALATION: Explicit requests to escalate something to a supervisor, or reporting issues/incidents
 - GREETING: Simple greetings with no real question
 - UNKNOWN: Cannot classify or not related to field operations
@@ -71,6 +77,10 @@ class IntentClassifier:
         case_match = _CASE_ID_PATTERN.search(text)
         if case_match:
             return Intent.CASE_LOOKUP, case_match.group(1)
+
+        # Fast-path: SurveyCTO form issue phrasing
+        if _SURVEY_ISSUE_PATTERN.search(text):
+            return Intent.SURVEYCTO_ISSUE, None
 
         # Use LLM for everything else
         if not self.openai_client.has_api_key:

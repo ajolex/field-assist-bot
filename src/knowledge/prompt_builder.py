@@ -19,7 +19,7 @@ YOUR RULES:
 4. If unsure, say so and escalate ONLY to Aubrey (SRA, Discord: ajolex0306). Do NOT escalate to FCs, FM, or anyone else. Aubrey is the ONLY person who receives escalations from you.
 5. Be concise, friendly, and professional
 6. Respond in English (field teams communicate in English on Discord)
-7. When answering protocol questions, cite the source section
+7. Do not include file paths or source citations in user-facing responses
 8. For case lookups, only show: case ID, status, team, barangay, forms
 
 ESCALATION RULES:
@@ -37,14 +37,10 @@ def build_prompt(question: str, context_chunks: list[KnowledgeChunk]) -> list[di
 	Returns a list of message dicts ready for OpenAI chat completions API.
 	"""
 
-	# Assemble context with source citations
+	# Assemble plain context without source citation text
 	context_parts = []
 	for chunk in context_chunks:
-		citation = f"[{chunk.source_doc}"
-		if chunk.section_path and chunk.section_path != "root":
-			citation += f" > {chunk.section_path}"
-		citation += "]"
-		context_parts.append(f"{citation}\n{chunk.text}")
+		context_parts.append(chunk.text)
 
 	context = "\n\n".join(context_parts)
 

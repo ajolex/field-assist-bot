@@ -1,5 +1,7 @@
 """Protocol question-answering business logic."""
 
+import re
+
 from src.config import settings
 from src.db.repositories.interaction_repo import InteractionRepository
 from src.integrations.openai_client import OpenAIClient
@@ -23,6 +25,20 @@ def _escalation_mention() -> str:
 	if settings.escalation_discord_user_id:
 		return f"<@{settings.escalation_discord_user_id}>"
 	return f"@{settings.escalation_display_name}"
+
+
+def _strip_source_references(text: str) -> str:
+	"""Remove source citation lines from user-facing responses."""
+
+	cleaned_lines: list[str] = []
+	for line in text.splitlines():
+		lower = line.strip().lower()
+		if lower.startswith("source:") or lower.startswith("sources:"):
+			continue
+		if re.search(r"\[[^\]]+\.md(?:\s*>\s*[^\]]+)?\]", line):
+			continue
+		cleaned_lines.append(line)
+	return "\n".join(cleaned_lines).strip()
 
 
 class ProtocolService:
@@ -65,15 +81,14 @@ class ProtocolService:
 
 		# Step 3: Generate answer
 		# Extract context for the chat call
-		context_text = "\n\n".join(
-			f"[{chunk.source_doc}] {chunk.text}" for chunk in matches
-		)
+		context_text = "\n\n".join(chunk.text for chunk in matches)
 
 		answer = await self.openai_client.chat_with_system_prompt(
 			system_prompt=messages[0]["content"],  # System prompt
 			user_message=question,
 			context=context_text,
 		)
+		answer = _strip_source_references(answer)
 
 		# Step 4: Assess confidence
 		confidence = await assess_confidence(question, answer, matches, self.openai_client)
@@ -100,6 +115,8 @@ class ProtocolService:
 				f"⚠️ *Medium confidence* — {mention}, can you confirm this "
 				f"if the FO considers it critical?"
 			)
+
+		answer = _strip_source_references(answer)
 
 		# Step 6: Log interaction
 		await self.interaction_repository.create(

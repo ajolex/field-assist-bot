@@ -34,6 +34,13 @@ class Settings(BaseSettings):
 	google_service_account_json: str = Field(default="", alias="GOOGLE_SERVICE_ACCOUNT_JSON")
 	google_assignments_sheet_id: str = Field(default="", alias="GOOGLE_ASSIGNMENTS_SHEET_ID")
 	google_productivity_sheet_id: str = Field(default="", alias="GOOGLE_PRODUCTIVITY_SHEET_ID")
+	google_form_hh_survey_sheet_id: str = Field(default="", alias="GOOGLE_FORM_HH_SURVEY_SHEET_ID")
+	google_form_icm_business_sheet_id: str = Field(
+		default="", alias="GOOGLE_FORM_ICM_BUSINESS_SHEET_ID"
+	)
+	google_form_phase_a_revisit_sheet_id: str = Field(
+		default="", alias="GOOGLE_FORM_PHASE_A_REVISIT_SHEET_ID"
+	)
 
 	surveycto_server_name: str = Field(default="", alias="SURVEYCTO_SERVER_NAME")
 	surveycto_username: str = Field(default="", alias="SURVEYCTO_USERNAME")
@@ -105,6 +112,17 @@ class Settings(BaseSettings):
 		if ids:
 			return ids
 		return [self.discord_guild_id] if self.discord_guild_id else []
+
+	@property
+	def surveycto_form_sheet_ids(self) -> dict[str, str]:
+		"""Configured SurveyCTO form sheet IDs keyed by form name."""
+
+		forms = {
+			"hh_survey": self.google_form_hh_survey_sheet_id,
+			"icm_business": self.google_form_icm_business_sheet_id,
+			"phase_a_revisit": self.google_form_phase_a_revisit_sheet_id,
+		}
+		return {name: sheet_id for name, sheet_id in forms.items() if sheet_id.strip()}
 
 
 settings = Settings()

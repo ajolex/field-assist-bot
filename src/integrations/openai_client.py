@@ -190,3 +190,33 @@ class OpenAIClient:
 				if not context.strip():
 					return "I do not have enough context to answer this confidently."
 				return f"Based on the knowledge base context: {context[:400]}"
+
+	async def extract_image_context(self, image_urls: list[str], instruction: str) -> str:
+		"""Extract useful text/context from one or more image URLs using vision-capable model."""
+
+		if not self.has_api_key or not image_urls:
+			return ""
+
+		content: list[dict[str, object]] = [{"type": "text", "text": instruction}]
+		for image_url in image_urls[:4]:
+			content.append({"type": "image_url", "image_url": {"url": image_url}})
+
+		try:
+			response = await self.client.chat.completions.create(
+				model=settings.openai_model_primary,
+				messages=[{"role": "user", "content": content}],
+				temperature=0.1,
+			)
+			return (response.choices[0].message.content or "").strip()
+		except (APIError, RateLimitError, BadRequestError) as e:
+			log.warning("openai.image_context_failed", error=str(e), trying_fallback=True)
+			try:
+				response = await self.client.chat.completions.create(
+					model=settings.openai_model_fallback,
+					messages=[{"role": "user", "content": content}],
+					temperature=0.1,
+				)
+				return (response.choices[0].message.content or "").strip()
+			except (APIError, RateLimitError, BadRequestError) as fallback_error:
+				log.error("openai.image_context_fallback_failed", error=str(fallback_error))
+				return ""

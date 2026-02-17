@@ -35,6 +35,10 @@ dev = [
   "mypy>=1.13.0",
 ]
 
+[project.scripts]
+field-assist-bot = "src.cli:run_bot"
+field-assist-index = "src.cli:index_only"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*"]

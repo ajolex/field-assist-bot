@@ -98,3 +98,80 @@ class GoogleSheetsClient:
 		"""Write log event (no-op placeholder)."""
 
 		_ = values
+
+	async def read_form_sheet_tabs(self, sheet_id: str) -> dict[str, list[dict[str, str]]]:
+		"""Read all worksheets from a SurveyCTO form Google Sheet."""
+
+		if not self.has_credentials or not sheet_id.strip():
+			return {}
+
+		def _read() -> dict[str, list[dict[str, str]]]:
+			try:
+				sheet = self.client.open_by_key(sheet_id)
+				result: dict[str, list[dict[str, str]]] = {}
+				for worksheet in sheet.worksheets():
+					try:
+						records = worksheet.get_all_records()
+					except Exception:
+						records = []
+					result[worksheet.title] = [dict(record) for record in records]
+				return result
+			except Exception as e:
+				log.error("google_sheets.read_form_sheet_tabs_failed", sheet_id=sheet_id, error=str(e))
+				return {}
+
+		return await asyncio.to_thread(_read)
+
+	async def surveycto_issue_context(
+		self,
+		issue_text: str,
+		variable_hints: list[str],
+		max_rows: int = 20,
+	) -> str:
+		"""Build compact context from configured form sheets for issue troubleshooting."""
+
+		if not self.has_credentials:
+			return ""
+
+		keywords = {word.lower() for word in issue_text.split() if len(word) >= 3}
+		keywords.update(hint.lower() for hint in variable_hints)
+		if not keywords:
+			return ""
+
+		sections: list[str] = []
+		for form_name, sheet_id in settings.surveycto_form_sheet_ids.items():
+			tabs = await self.read_form_sheet_tabs(sheet_id)
+			if not tabs:
+				continue
+
+			matches: list[str] = []
+			for tab_name, rows in tabs.items():
+				for row in rows:
+					name = str(row.get("name", "")).strip()
+					type_ = str(row.get("type", "")).strip()
+					relevant = str(row.get("relevant", "")).strip()
+					constraint = str(row.get("constraint", "")).strip()
+					label = ""
+					for key, value in row.items():
+						if str(key).lower().startswith("label") and str(value).strip():
+							label = str(value).strip()
+							break
+
+					combined = f"{name} {type_} {label} {relevant} {constraint}".lower()
+					if not combined.strip():
+						continue
+
+					if any(keyword in combined for keyword in keywords):
+						matches.append(
+							f"[{tab_name}] name={name or '-'} type={type_ or '-'} "
+							f"relevant={relevant or '-'} constraint={constraint or '-'} label={label or '-'}"
+						)
+						if len(matches) >= max_rows:
+							break
+				if len(matches) >= max_rows:
+					break
+
+			if matches:
+				sections.append(f"Form {form_name}:\n" + "\n".join(matches))
+
+		return "\n\n".join(sections)

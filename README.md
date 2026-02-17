@@ -19,7 +19,23 @@ MVP foundation across all phases is implemented:
    - `pip install -e .[dev]`
 3. Copy `.env.example` to `.env` and fill required values.
 4. Run bot:
-   - `python -m src.bot`
+    - `python -m src.bot`
+    - or after install: `field-assist-bot` (runs indexing first, then starts the bot)
+
+## Windows Terminal / PowerShell usage
+
+- One-time install in your venv:
+   - `.\\.venv\\Scripts\\pip.exe install -e .`
+- Daily run (index any new/changed docs, then start bot):
+   - `.\\.venv\\Scripts\\field-assist-bot.exe`
+- Force full re-index before startup:
+   - `.\\.venv\\Scripts\\field-assist-bot.exe --force-index`
+- Start bot without pre-index step:
+   - `.\\.venv\\Scripts\\field-assist-bot.exe --skip-index`
+- Index only (no bot start):
+   - `.\\.venv\\Scripts\\field-assist-index.exe`
+- No-install fallback (works immediately from repo root):
+   - `.\\.venv\\Scripts\\python.exe -m src.cli`
 
 ## Commands available now
 
@@ -47,6 +63,7 @@ MVP foundation across all phases is implemented:
 
 - On bot startup, the knowledge index is loaded from `KNOWLEDGE_INDEX_CACHE_PATH` when unchanged.
 - Only changed/new markdown docs are re-embedded; unchanged docs reuse cached vectors.
+- The indexer scans markdown files recursively under `KNOWLEDGE_BASE_PATH` (supports subfolders like `icm_follow_up/`, `scto_docs/`, etc.).
 - Protocol answers no longer append a `📚 Sources:` list in user-facing replies.
 - While running, the bot periodically scans for newly added `*.md` docs and reindexes only when new files are detected.
 - Build/update the cache manually:
