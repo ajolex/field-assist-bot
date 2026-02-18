@@ -75,6 +75,13 @@ Core command groups:
 - Admin: `/bot_stats`, `/reload_kb`, `/kb_candidates`, `/promote_candidate`, `/set_version`, `/resolve`, `/escalation_stats`
 - Issue triage: message context menu `Create Field Issue`, plus `/issue_update`, `/issue_show`
 - Automation: `/run_job`
+- Remote control (private channel only):
+  - System: `/sys status`, `/sys processes`, `/sys kill`
+  - Files: `/file find`, `/file send`, `/file save`, `/file size`, `/file zip`
+  - Screen: `/screenshot`
+  - Apps: `/app open`, `/app close`, `/app run`
+  - Web: `/web download`, `/web ping`
+  - Git: `/git_ops status`, `/git_ops pull`
 
 ## 5) Automation jobs
 
@@ -111,7 +118,41 @@ What this job does:
 - Form data downloads (HH and Business) use Stata `sctoapi` in automation.
 - Form version values shown by bot come from each form Google Sheet `settings` tab, `version` column.
 
-## 8) Quick troubleshooting
+## 8) Remote control (private channel or DM)
+
+All remote control commands are locked to:
+
+- **Channel:** Automations (`AUTOMATION_CHANNEL_ID=1473271873352499273`) **or** a direct message to the bot
+- **User:** Only `SRA_DISCORD_USER_ID` (Aubrey) can execute these
+
+In the Automations channel, @mention the bot with your request.
+In DMs, just type your request — no @mention needed.
+
+Available command groups:
+
+| Group | Commands | Description |
+|---|---|---|
+| `/sys` | `status`, `processes`, `kill <name>` | CPU/RAM/disk, top processes, kill a process |
+| `/file` | `find <pattern>`, `send <path>`, `save <url> <folder>`, `size <path>`, `zip <path>` | Search, upload, download, measure, compress files |
+| `/screenshot` | — | Capture and send current screen |
+| `/app` | `open <path>`, `close <name>`, `run <script.ps1>` | Launch, close, or run PowerShell scripts |
+| `/web` | `download <url> <folder>`, `ping <url>` | Download files, check site reachability |
+| `/git_ops` | `status <repo>`, `pull <repo>` | Git status and pull in any local repo |
+
+Safety guardrails:
+
+- System-critical processes (`explorer`, `csrss`, `lsass`, `svchost`, `system`) cannot be killed or closed.
+- Only `.ps1` scripts that exist on disk can be run — no inline shell execution.
+- File uploads respect Discord's 25 MB limit (`REMOTE_FILE_MAX_MB`).
+
+Environment variables:
+
+- `AUTOMATION_CHANNEL_ID` — Discord channel ID for remote control commands
+- `REMOTE_SCREENSHOT_QUALITY` — Screenshot quality (default 70)
+- `REMOTE_FILE_MAX_MB` — Max file upload size in MB (default 25)
+- `REMOTE_CMD_TIMEOUT` — Command timeout in seconds (default 60)
+
+## 9) Quick troubleshooting
 
 Check Python env command path:
 
@@ -128,3 +169,6 @@ Check latest automation run logs:
 Re-run tests for automation service only:
 
 - `.\.venv\Scripts\python.exe -m pytest tests/unit/test_remote_automation_service.py -q`
+Re-run tests for remote control service:
+
+- `.\.\.venv\Scripts\python.exe -m pytest tests/unit/test_remote_control_service.py -q`

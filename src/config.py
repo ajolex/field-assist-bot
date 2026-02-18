@@ -135,6 +135,18 @@ class Settings(BaseSettings):
 		),
 		alias="STATA_BUSINESS_MASTER_DO_PATH",
 	)
+	surveycto_form_phase_a_id: str = Field(
+		default="phase_a_revisit",
+		alias="SURVEYCTO_FORM_PHASE_A_ID",
+	)
+	surveycto_phase_a_csv_path: str = Field(
+		default=(
+			"F:/10_Livelihood/PSPS ICM Livelihoods Study/10_ICM Follow up survey/"
+			"Data Management System/Phase A revisit/4_data/2_survey/"
+			"phase_a_revisit_WIDE.csv"
+		),
+		alias="SURVEYCTO_PHASE_A_CSV_PATH",
+	)
 
 	# Knowledge index settings
 	knowledge_base_path: str = Field(default="docs/knowledge_base", alias="KNOWLEDGE_BASE_PATH")

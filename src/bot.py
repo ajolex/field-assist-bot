@@ -205,7 +205,18 @@ class FieldAssistBot(commands.Bot):
 
 		if message.author.bot or self.user is None:
 			return
-		await self._maybe_collect_knowledge_candidate(message)
+
+		# --- DM from authorised user — no @mention needed -------------------
+		is_dm = isinstance(message.channel, discord.DMChannel)
+		is_authorised_dm = (
+			is_dm
+			and settings.sra_discord_user_id
+			and message.author.id == settings.sra_discord_user_id
+		)
+
+		if not is_dm:
+			await self._maybe_collect_knowledge_candidate(message)
+
 		content_lower = message.content.lower()
 		bot_name = (self.user.display_name or self.user.name).lower()
 		mention_by_entity = self.user.id in message.raw_mentions
@@ -218,7 +229,7 @@ class FieldAssistBot(commands.Bot):
 			bot_name in role.name.lower() for role in getattr(message, "role_mentions", [])
 		)
 
-		if not (mention_by_entity or mention_by_token or mention_by_name or mention_by_role):
+		if not (is_authorised_dm or mention_by_entity or mention_by_token or mention_by_name or mention_by_role):
 			return
 		if message.mention_everyone:
 			return
@@ -262,15 +273,21 @@ class FieldAssistBot(commands.Bot):
 
 		user_id = str(message.author.id)
 		channel = f"#{message.channel.name}" if hasattr(message.channel, "name") else "#dm"
-		mention = _escalation_mention()
-		footer = f"\n\n---\n\U0001f4ac *Not satisfied with this answer? Feel free to reach out to my boss {mention} directly.*"
 
 		self.log.info("mention.received", user=user_id, question=question[:80])
 
 		try:
 			async with message.channel.typing():
-				response = await self._handle_mention(question, user_id, channel)
-			await self._send_reply(message, response + footer)
+				response = await self._handle_mention(
+					question, user_id, channel,
+					message=message, is_dm=is_authorised_dm,
+				)
+			if response:  # empty string means handler already replied (e.g. file upload)
+				# Skip the escalation footer in DMs — keep it conversational
+				if not is_authorised_dm:
+					mention = _escalation_mention()
+					response += f"\n\n---\n\U0001f4ac *Not satisfied with this answer? Feel free to reach out to my boss {mention} directly.*"
+				await self._send_reply(message, response)
 		except Exception as e:
 			self.log.error("mention.error", error=str(e))
 			await message.reply("\u26a0\ufe0f Something went wrong. Try a slash command or rephrase your question.")
@@ -281,14 +298,28 @@ class FieldAssistBot(commands.Bot):
 		self.log.exception("discord.event_error", event_method=event_method)
 
 	async def _handle_mention(
-		self, question: str, user_id: str, channel: str
+		self, question: str, user_id: str, channel: str,
+		*, message: discord.Message | None = None,
+		is_dm: bool = False,
 	) -> str:
 		"""Classify intent and route to the right service."""
 
 		intent, param = await self.intent_classifier.classify(question)
 		self.log.info("mention.classified", intent=intent.value, param=param)
 
+		# --- Remote-control intents ------------------------------------------
+		if intent.value.startswith("rc_"):
+			return await self._handle_remote_control(
+				intent, param or question, user_id, message
+			)
+
 		if intent == Intent.GREETING:
+			if is_dm:
+				return (
+					"Hey Aubrey! 👋 What do you need?\n\n"
+					"You can ask me anything — check on your PC, look up cases, "
+					"run automations, or just chat. I'm here."
+				)
 			return (
 				"👋 Hey! I'm Field Assist Bot — Aubrey's assistant. Ask me about:\n"
 				"• **Protocol** — survey procedures, field scenarios\n"
@@ -362,10 +393,257 @@ class FieldAssistBot(commands.Bot):
 			)
 
 		# Default: protocol pipeline (covers PROTOCOL, ASSIGNMENTS, UNKNOWN, etc.)
+		if is_dm and intent == Intent.UNKNOWN:
+			# In DMs treat unclassified messages as casual chat
+			return await self._dm_chat(question)
+
 		answer, confidence = await self.protocol_service.answer_question(
 			question, user_id=user_id, channel=channel
 		)
+		if is_dm:
+			return answer  # skip confidence tag in DMs — keep it conversational
 		return f"{answer}\n\n*Confidence: {confidence.value}*"
+
+	# ------------------------------------------------------------------
+	# DM casual chat — personal-assistant mode
+	# ------------------------------------------------------------------
+
+	_DM_SYSTEM_PROMPT = (
+		"You are Aubrey Jolex's personal assistant bot on Discord. "
+		"Aubrey is a Senior Research Associate at IPA Philippines. "
+		"You're chatting with him in a private DM — be warm, concise, and helpful. "
+		"You can help with anything: work questions, quick tasks, brainstorming, "
+		"reminders, and casual chat. "
+		"Keep responses short and natural — like texting a smart friend. "
+		"Sprinkle in Filipino/Hiligaynon phrases occasionally "
+		"('Wait lang', 'Halong!', 'Salamat gid') but don't overdo it. "
+		"If he asks about PC stuff (files, screenshots, system, git), "
+		"remind him he can just ask directly and you'll handle it. "
+		"If he asks about field ops (protocol, cases, progress), answer from "
+		"your knowledge as Field Assist Bot."
+	)
+
+	async def _dm_chat(self, question: str) -> str:
+		"""Handle casual DM conversation as a personal assistant."""
+		try:
+			response = await self.openai_client.chat_with_system_prompt(
+				system_prompt=self._DM_SYSTEM_PROMPT,
+				user_message=question,
+				context="",
+			)
+			return response.strip()
+		except Exception as e:
+			self.log.error("dm_chat.failed", error=str(e))
+			return "Hmm, something went wrong on my end. Try again? 🙏"
+
+	async def _handle_remote_control(
+		self,
+		intent: Intent,
+		raw_text: str,
+		user_id: str,
+		message: discord.Message | None,
+	) -> str:
+		"""Execute remote-control intent with channel + user guard."""
+
+		from src.services import remote_control_service as rc
+		from src.services.rc_param_extractor import extract_params
+
+		# --- Security gate ---------------------------------------------------
+		automation_ch = settings.automation_channel_id or 1473271873352499273
+		channel_id = getattr(message, "channel", None) and message.channel.id
+		is_dm = isinstance(
+			getattr(message, "channel", None), discord.DMChannel
+		)
+		# Allow: Automations channel OR DM from the authorised user
+		if not is_dm and channel_id != automation_ch:
+			return (
+				f"🔒 Remote-control commands only work in <#{automation_ch}> or via DM.\n"
+				"Please re-send your request there."
+			)
+		if settings.sra_discord_user_id and int(user_id) != settings.sra_discord_user_id:
+			return "🔒 Only Aubrey can run remote-control commands."
+
+		# --- Parameter-free intents ------------------------------------------
+		if intent == Intent.RC_SYS_STATUS:
+			return await rc.system_status()
+
+		if intent == Intent.RC_SCREENSHOT:
+			if message:
+				# Extract optional window name
+				window_name = None
+				if raw_text and raw_text.strip():
+					params = await extract_params(self.openai_client, intent.value, raw_text)
+					window_name = params.get("window_name")
+				img_path, error = await rc.take_screenshot(window_name=window_name)
+				if error:
+					return error
+				try:
+					label = f"🖥️ `{window_name}`:" if window_name else "🖥️ Current screen:"
+					await message.reply(
+						label,
+						file=discord.File(str(img_path)),
+					)
+					return ""  # already replied with file
+				finally:
+					img_path.unlink(missing_ok=True)
+			return "Could not send screenshot (no message context)."
+
+		if intent == Intent.RC_PROCESSES:
+			params = await extract_params(self.openai_client, intent.value, raw_text)
+			top_n = int(params.get("top_n", "15"))
+			return await rc.list_processes(min(top_n, 50))
+
+		# --- Parameterised intents -------------------------------------------
+		params = await extract_params(self.openai_client, intent.value, raw_text)
+
+		if intent == Intent.RC_KILL:
+			name = params.get("name", "")
+			if not name:
+				return "❌ I need a process name. Try: *kill Chrome* or *end Stata*"
+			return await rc.kill_process(name)
+
+		if intent == Intent.RC_FILE_FIND:
+			pattern = params.get("pattern", "")
+			if not pattern:
+				return "❌ I need a filename pattern. Try: *find *.xlsx in my documents*"
+			root = params.get("search_root", "C:\\Users")
+			return await rc.find_files(pattern, root)
+
+		if intent == Intent.RC_FILE_SEND:
+			path = params.get("path", "")
+			if not path:
+				return "❌ I need a file path. Try: *send me C:\\reports\\weekly.xlsx*"
+			file_path, error = rc.prepare_file_for_upload(path)
+			if error:
+				return error
+			if message:
+				await message.reply(
+					f"📎 `{file_path.name}`",
+					file=discord.File(str(file_path)),
+				)
+				return ""
+			return f"File ready: `{file_path}`"
+
+		if intent == Intent.RC_FILE_SAVE:
+			url = params.get("url", "")
+			dest = params.get("dest_folder", "")
+			if not url or not dest:
+				return "❌ I need a URL and a destination folder. Try: *save <url> to my downloads*"
+			import httpx
+			try:
+				async with httpx.AsyncClient(timeout=60) as client:
+					resp = await client.get(url)
+					resp.raise_for_status()
+			except Exception as e:
+				return f"❌ Download failed: {e}"
+			filename = url.rsplit("/", 1)[-1].split("?")[0] or "file"
+			return await rc.save_attachment(resp.content, filename, dest)
+
+		if intent == Intent.RC_FILE_SIZE:
+			path = params.get("path", "")
+			if not path:
+				return "❌ I need a file or folder path."
+			return await rc.file_or_dir_size(path)
+
+		if intent == Intent.RC_FILE_ZIP:
+			path = params.get("path", "")
+			if not path:
+				return "❌ I need a file or folder path to zip."
+			zip_path, error = await rc.zip_path(path)
+			if error:
+				return error
+			if message:
+				try:
+					await message.reply(
+						f"📦 `{zip_path.name}`",
+						file=discord.File(str(zip_path)),
+					)
+					return ""
+				finally:
+					zip_path.unlink(missing_ok=True)
+			return f"Zip ready: `{zip_path}`"
+
+		if intent == Intent.RC_APP_OPEN:
+			path = params.get("path", "")
+			if not path:
+				return "❌ I need a file or application path to open."
+			return await rc.open_path(path)
+
+		if intent == Intent.RC_APP_CLOSE:
+			name = params.get("name", "")
+			if not name:
+				return "❌ I need an application name to close."
+			return await rc.close_app(name)
+
+		if intent == Intent.RC_APP_RUN:
+			path = params.get("path", "")
+			if not path:
+				return "❌ I need a .ps1 script path to run."
+			return await rc.run_powershell(path)
+
+		if intent == Intent.RC_WEB_DOWNLOAD:
+			url = params.get("url", "")
+			dest = params.get("dest_folder", "")
+			if not url:
+				return "❌ I need a URL. Try: *download <url> to my desktop*"
+			if not dest:
+				dest = "C:\\Users\\AJolex\\Downloads"
+			return await rc.download_url(url, dest)
+
+		if intent == Intent.RC_WEB_PING:
+			url = params.get("url", "")
+			if not url:
+				return "❌ I need a URL to check."
+			return await rc.ping_url(url)
+
+		if intent == Intent.RC_GIT_STATUS:
+			repo = params.get("repo_path", "") or params.get("path", "G:\\field-assist-bot")
+			return await rc.git_status(repo)
+
+		if intent == Intent.RC_GIT_PULL:
+			repo = params.get("repo_path", "") or params.get("path", "G:\\field-assist-bot")
+			return await rc.git_pull(repo)
+
+		# --- Automation job intents ------------------------------------------
+		from src.services.remote_automation_service import RemoteAutomationService
+
+		if intent == Intent.RC_DOWNLOAD_HH:
+			result = await self.remote_automation_service.download_form(
+				RemoteAutomationService.FORM_HH, requester=user_id,
+			)
+			return f"{result.summary}\n" + "\n".join(f"- {d}" for d in result.details)
+
+		if intent == Intent.RC_DOWNLOAD_BIZ:
+			result = await self.remote_automation_service.download_form(
+				RemoteAutomationService.FORM_BIZ, requester=user_id,
+			)
+			return f"{result.summary}\n" + "\n".join(f"- {d}" for d in result.details)
+
+		if intent == Intent.RC_DOWNLOAD_PHASE_A:
+			result = await self.remote_automation_service.download_form(
+				RemoteAutomationService.FORM_PHASE_A, requester=user_id,
+			)
+			return f"{result.summary}\n" + "\n".join(f"- {d}" for d in result.details)
+
+		if intent == Intent.RC_RUN_HH_DMS:
+			result = await self.remote_automation_service.run_single_dms(
+				RemoteAutomationService.FORM_HH, requester=user_id,
+			)
+			return f"{result.summary}\n" + "\n".join(f"- {d}" for d in result.details)
+
+		if intent == Intent.RC_RUN_BIZ_DMS:
+			result = await self.remote_automation_service.run_single_dms(
+				RemoteAutomationService.FORM_BIZ, requester=user_id,
+			)
+			return f"{result.summary}\n" + "\n".join(f"- {d}" for d in result.details)
+
+		if intent == Intent.RC_RUN_DMS:
+			result = await self.remote_automation_service.run_job(
+				job_name=RemoteAutomationService.DAILY_DMS_JOB, requester=user_id,
+			)
+			return f"{result.summary}\n" + "\n".join(f"- {d}" for d in result.details)
+
+		return "🤔 I recognized a remote-control request but couldn't figure out what to do. Try rephrasing?"
 
 	async def _send_reply(self, message: discord.Message, text: str) -> None:
 		"""Reply, splitting if over Discord's 2000-char limit."""

@@ -31,6 +31,10 @@ Thumbs.db
 *.sqlite3
 chroma/
 
+# Runtime logs and caches
+*.log
+.cache/
+
 # Build artifacts
 *.egg-info/
 dist/

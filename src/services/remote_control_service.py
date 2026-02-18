@@ -217,21 +217,59 @@ async def save_attachment(data: bytes, filename: str, dest_folder: str) -> str:
 # SCREENSHOTS
 # ===================================================================
 
-async def take_screenshot() -> tuple[Path | None, str]:
-    """Capture full-screen screenshot using PowerShell + .NET.  Returns (path, error)."""
-    tmp = Path(tempfile.mktemp(suffix=".png", prefix="screenshot_"))
-    quality = settings.remote_screenshot_quality
+async def take_screenshot(window_name: str | None = None) -> tuple[Path | None, str]:
+    """Capture screenshot using PowerShell + .NET.
 
-    ps_script = (
-        "Add-Type -AssemblyName System.Windows.Forms; "
-        "Add-Type -AssemblyName System.Drawing; "
-        "$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; "
-        "$bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height); "
-        "$gfx = [System.Drawing.Graphics]::FromImage($bmp); "
-        "$gfx.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size); "
-        f"$bmp.Save('{tmp}', [System.Drawing.Imaging.ImageFormat]::Png); "
-        "$gfx.Dispose(); $bmp.Dispose()"
-    )
+    If *window_name* is given, bring that window to the foreground first and
+    capture only its bounds.  Otherwise capture the full primary screen.
+    Returns (path, error).
+    """
+    tmp = Path(tempfile.mktemp(suffix=".png", prefix="screenshot_"))
+
+    if window_name:
+        # Capture a specific window
+        ps_script = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "Add-Type -AssemblyName System.Drawing; "
+            "Add-Type @'\n"
+            "using System; using System.Runtime.InteropServices;\n"
+            "public class WinAPI {\n"
+            "  [DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);\n"
+            "  [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);\n"
+            "  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L,T,R,B; }\n"
+            "  [DllImport(\"user32.dll\")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);\n"
+            "}\n"
+            "'@; "
+            f"$p = Get-Process -ErrorAction SilentlyContinue | Where-Object {{ $_.MainWindowTitle -match '{window_name}' -or $_.ProcessName -match '{window_name}' }} | Select-Object -First 1; "
+            "if (-not $p) { Write-Error 'Window not found'; exit 1 }; "
+            "$h = $p.MainWindowHandle; "
+            "[WinAPI]::ShowWindow($h, 9) | Out-Null; "  # SW_RESTORE
+            "Start-Sleep -Milliseconds 300; "
+            "[WinAPI]::SetForegroundWindow($h) | Out-Null; "
+            "Start-Sleep -Milliseconds 500; "
+            "$r = New-Object WinAPI+RECT; "
+            "[WinAPI]::GetWindowRect($h, [ref]$r) | Out-Null; "
+            "$w = $r.R - $r.L; $ht = $r.B - $r.T; "
+            "if ($w -lt 10 -or $ht -lt 10) { Write-Error 'Window has no visible area'; exit 1 }; "
+            "$bmp = New-Object System.Drawing.Bitmap($w, $ht); "
+            "$gfx = [System.Drawing.Graphics]::FromImage($bmp); "
+            "$gfx.CopyFromScreen($r.L, $r.T, 0, 0, (New-Object System.Drawing.Size($w, $ht))); "
+            f"$bmp.Save('{tmp}', [System.Drawing.Imaging.ImageFormat]::Png); "
+            "$gfx.Dispose(); $bmp.Dispose()"
+        )
+    else:
+        # Full-screen capture
+        ps_script = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "Add-Type -AssemblyName System.Drawing; "
+            "$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; "
+            "$bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height); "
+            "$gfx = [System.Drawing.Graphics]::FromImage($bmp); "
+            "$gfx.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size); "
+            f"$bmp.Save('{tmp}', [System.Drawing.Imaging.ImageFormat]::Png); "
+            "$gfx.Dispose(); $bmp.Dispose()"
+        )
+
     rc, out, err = await _run(["powershell", "-NoProfile", "-Command", ps_script], timeout=15)
     if rc == 0 and tmp.exists():
         return tmp, ""

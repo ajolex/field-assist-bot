@@ -29,6 +29,11 @@ class RemoteAutomationService:
 
 	DAILY_DMS_JOB = "scto_dms_daily"
 
+	# Form key constants for granular operations
+	FORM_HH = "household"
+	FORM_BIZ = "business"
+	FORM_PHASE_A = "phase_a"
+
 	def __init__(self, survey_client: SurveyCTOClient) -> None:
 		"""Initialize with SurveyCTO client and log location."""
 		self.survey_client = survey_client
@@ -41,6 +46,81 @@ class RemoteAutomationService:
 				"Run SurveyCTO sctoapi downloads for two forms, then run two Stata master do-files"
 			),
 		}
+
+	# ------------------------------------------------------------------
+	# Granular operations — download a single form or run a single DMS
+	# ------------------------------------------------------------------
+
+	def _form_config(self, form_key: str) -> tuple[str, Path, Path]:
+		"""Return (form_id, output_folder, csv_path) for a form key."""
+		if form_key == self.FORM_HH:
+			csv = Path(settings.surveycto_household_csv_path)
+			return settings.surveycto_form_household_id, csv.parent, csv
+		if form_key == self.FORM_BIZ:
+			csv = Path(settings.surveycto_business_csv_path)
+			return settings.surveycto_form_business_id, csv.parent, csv
+		if form_key == self.FORM_PHASE_A:
+			csv = Path(settings.surveycto_phase_a_csv_path)
+			return settings.surveycto_form_phase_a_id, csv.parent, csv
+		raise ValueError(f"Unknown form key: {form_key}")
+
+	async def download_form(self, form_key: str, requester: str) -> AutomationRunResult:
+		"""Download a single SurveyCTO form CSV (no Stata)."""
+		try:
+			form_id, output_folder, csv_path = self._form_config(form_key)
+			output_folder.mkdir(parents=True, exist_ok=True)
+			detail = await self._run_sctoapi_download(
+				form_id=form_id,
+				output_folder=output_folder,
+				csv_output_path=csv_path,
+			)
+			result = AutomationRunResult(
+				ok=True,
+				summary=f"✅ Downloaded **{form_key}** form CSV.",
+				details=[detail],
+			)
+			await self._append_log(
+				job_name=f"download_{form_key}", requester=requester, ok=True, details=[detail],
+			)
+			return result
+		except Exception as error:
+			msg = f"❌ Download failed for {form_key}: {error}"
+			log.error("download_form.failed", form=form_key, error=str(error))
+			await self._append_log(
+				job_name=f"download_{form_key}", requester=requester, ok=False, details=[str(error)],
+			)
+			return AutomationRunResult(ok=False, summary=msg, details=[str(error)])
+
+	async def run_single_dms(self, form_key: str, requester: str) -> AutomationRunResult:
+		"""Run only the Stata DMS do-file for one form (no download)."""
+		try:
+			if form_key == self.FORM_HH:
+				do_file = Path(settings.stata_household_master_do_path)
+			elif form_key == self.FORM_BIZ:
+				do_file = Path(settings.stata_business_master_do_path)
+			else:
+				return AutomationRunResult(
+					ok=False,
+					summary=f"❌ No Stata DMS configured for form key: {form_key}",
+					details=[],
+				)
+			detail = await self._run_stata_do_file(do_file)
+			result = AutomationRunResult(
+				ok=True,
+				summary=f"✅ Ran **{form_key}** Stata DMS (`{do_file.name}`).",
+				details=[detail],
+			)
+			await self._append_log(
+				job_name=f"run_dms_{form_key}", requester=requester, ok=True, details=[detail],
+			)
+			return result
+		except Exception as error:
+			msg = f"❌ Stata DMS failed for {form_key}: {error}"
+			log.error("run_dms.failed", form=form_key, error=str(error))
+			await self._append_log(
+				job_name=f"run_dms_{form_key}", requester=requester, ok=False, details=[str(error)],
+			)
+			return AutomationRunResult(ok=False, summary=msg, details=[str(error)])
 
 	async def run_job(self, *, job_name: str, requester: str) -> AutomationRunResult:
 		"""Execute one of the predefined jobs."""
